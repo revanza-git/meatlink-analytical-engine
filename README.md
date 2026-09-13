@@ -4,6 +4,103 @@ A guarded Codex agent runner that researches public beef-market signals and crea
 
 The engine uses Meatlink's authenticated MCP server and Codex's web research. It deliberately excludes all Meatlink marketplace inventory, order, RFQ, user, buyer, vendor, private-location, and internal-price data.
 
+## Repository relationship
+
+This repository is the analysis and orchestration layer. It does not contain the Meatlink website, database schema, MCP implementation, or production credentials.
+
+| Repository | Responsibility |
+| --- | --- |
+| [`revanza-git/meatlink-analytical-engine`](https://github.com/revanza-git/meatlink-analytical-engine) | Starts the guarded Codex workflow, selects regions and periods, enforces preview/write modes, and reports the result. |
+| [`revanza-git/meathub-production-hub`](https://github.com/revanza-git/meathub-production-hub) | Hosts `meatlink.id`, the OAuth-protected `/mcp` endpoint, MCP tool validation, Supabase persistence, admin review, and the public Insights page. |
+
+Keeping the repositories separate prevents the analytical runner from receiving direct database credentials. All Meatlink data access and draft writes cross the authenticated Meatlink MCP boundary.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    Operator["Operator or local scheduler"] --> Runner["TypeScript runner<br/>this repository"]
+    Runner --> Prompt["Guarded bilingual prompt<br/>preview or draft-write mode"]
+    Prompt --> Codex["Codex research agent"]
+
+    subgraph Public["Public external evidence"]
+        FAO["FAOSTAT QCL"]
+        USDA["USDA FAS PSD"]
+        Indonesia["BPS, BI, Kementan,<br/>Bapanas and other official pages"]
+    end
+
+    subgraph Main["Meatlink main project — meathub-production-hub"]
+        Auth["Supabase Auth<br/>OAuth 2.1"]
+        Endpoint["https://meatlink.id/mcp<br/>TanStack server route"]
+        Tools["MCP tools<br/>validation and privacy gates"]
+        Admin["/admin/insights<br/>human review and publish"]
+        Insights["/insights<br/>published bilingual notes"]
+    end
+
+    Codex -->|"OAuth login"| Auth
+    Codex -->|"authenticated tool calls"| Endpoint
+    Endpoint --> Tools
+    Tools -->|"public-data requests"| FAO
+    Tools -->|"public-data requests"| USDA
+    Codex -->|"source verification"| Indonesia
+
+    Tools --> Observations[("public_market_observations")]
+    Tools --> Drafts[("market_insights<br/>status: draft")]
+    Observations --> Tools
+    Drafts --> Admin
+    Admin -->|"manual approval"| Published[("market_insights<br/>status: published")]
+    Published --> Insights
+```
+
+The analytical engine never connects directly to Supabase. FAOSTAT credentials and the USDA API key remain server-only secrets in the main project; the runner uses the public-data tool without receiving those secrets.
+
+## Draft-generation flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Operator
+    participant Runner as Analytical runner
+    participant Codex as Codex agent
+    participant MCP as Meatlink MCP
+    participant Sources as Official public sources
+    participant DB as Supabase
+    actor Admin as Meatlink admin
+
+    Operator->>Runner: Select regions, period and preview/write mode
+    Runner->>Codex: Start ephemeral guarded analysis
+    Codex->>MCP: list_market_insights
+    MCP->>DB: Check for duplicate topics
+    Codex->>MCP: get_public_beef_market_data
+    MCP->>Sources: Read FAOSTAT and USDA FAS
+    Codex->>Sources: Verify current Indonesian evidence
+    Codex->>MCP: list_public_market_observations
+    MCP->>DB: Check existing evidence
+
+    alt Preview mode
+        Codex-->>Runner: Proposed bilingual payloads only
+    else Write mode with eligible evidence
+        Codex->>MCP: record_public_market_observation
+        MCP->>DB: Save candidate evidence
+        Codex->>MCP: review_public_market_observation
+        MCP->>DB: Mark checked evidence verified or rejected
+        Codex->>MCP: create_market_insight
+        MCP->>DB: Validate freshness, privacy and bilingual fields; save draft
+        Codex-->>Runner: Return draft IDs and evidence lineage
+    end
+
+    Admin->>DB: Review, edit and publish approved drafts
+```
+
+### Trust boundaries
+
+- **Local authentication:** Meatlink OAuth credentials are stored by Codex, not in this repository.
+- **Server secrets:** FAOSTAT and USDA credentials stay in the main project's server environment and never use a browser-visible `VITE_` prefix.
+- **Evidence gate:** a draft needs a recent public observation—price evidence no older than seven days or other eligible context no older than 30 days.
+- **Privacy gate:** the MCP rejects insight text that appears to contain Meatlink internal marketplace data.
+- **Publication gate:** the agent can create `draft` records only; publishing remains a human action in `/admin/insights`.
+- **Cloud boundary:** GitHub Actions runs CI checks only. It does not receive production OAuth credentials or generate articles.
+
 ## What it does
 
 1. Checks existing insights to prevent duplicates.
