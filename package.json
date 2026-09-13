@@ -1,0 +1,24 @@
+{
+  "name": "meatlink-analytical-engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A guarded Codex agent runner for bilingual Indonesian beef-market insight drafts.",
+  "type": "module",
+  "scripts": {
+    "generate": "tsx src/index.ts",
+    "preview": "tsx src/index.ts --dry-run",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.2",
+    "tsx": "4.23.13",
+    "typescript": "7.0.2",
+    "vitest": "5.0.0"
+  }
+}
+
