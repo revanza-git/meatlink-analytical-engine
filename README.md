@@ -85,7 +85,7 @@ sequenceDiagram
         Codex->>MCP: review_public_market_observation
         MCP->>DB: Mark checked evidence verified or rejected
         Codex->>MCP: create_market_insight
-        MCP->>DB: Validate freshness, privacy and bilingual fields; save draft
+        MCP->>DB: Validate freshness, privacy and bilingual fields, then save draft
         Codex-->>Runner: Return draft IDs and evidence lineage
     end
 
